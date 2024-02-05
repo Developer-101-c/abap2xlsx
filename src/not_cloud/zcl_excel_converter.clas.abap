@@ -1234,7 +1234,13 @@ CLASS zcl_excel_converter IMPLEMENTATION.
 *   Only if the Header is required create it.
       IF ws_option-hidehd IS INITIAL.
         " First of all write column header
-        l_cell_value = <fs_sfcat>-scrtext_m.
+		IF <fs_sfcat>-scrtext_l IS NOT INITIAL.
+		  l_cell_value = <fs_sfcat>-scrtext_l.
+		ELSEIF <fs_sfcat>-scrtext_m IS NOT INITIAL.
+          l_cell_value = <fs_sfcat>-scrtext_m.
+		ELSEIF <fs_sfcat>-scrtext_s IS NOT INITIAL.
+		  l_cell_value = <fs_sfcat>-scrtext_s.
+		ENDIF.
         wo_worksheet->set_cell( ip_column    = l_col_alpha
                                 ip_row       = l_row_int
                                 ip_value     = l_cell_value
@@ -1488,7 +1494,13 @@ CLASS zcl_excel_converter IMPLEMENTATION.
       l_s_color = abap_true.
       l_col_alpha = zcl_excel_common=>convert_column2alpha( l_col_int ).
       " First of all write column header
-      l_cell_value = <fs_sfcat>-scrtext_m.
+	  IF <fs_sfcat>-scrtext_l IS NOT INITIAL.
+	    l_cell_value = <fs_sfcat>-scrtext_l.
+	  ELSEIF <fs_sfcat>-scrtext_m IS NOT INITIAL.
+        l_cell_value = <fs_sfcat>-scrtext_m.
+	  ELSEIF <fs_sfcat>-scrtext_s IS NOT INITIAL.
+	    l_cell_value = <fs_sfcat>-scrtext_s.
+	  ENDIF.
       wo_worksheet->set_cell( ip_column    = l_col_alpha
                               ip_row       = l_row_int
                               ip_value     = l_cell_value
