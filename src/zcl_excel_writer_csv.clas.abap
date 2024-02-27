@@ -3,11 +3,12 @@ CLASS zcl_excel_writer_csv DEFINITION
   FINAL
   CREATE PUBLIC .
 
-*"* public components of class ZCL_EXCEL_WRITER_CSV
-*"* do not include other source files here!!!
-  PUBLIC SECTION.
 
+  PUBLIC SECTION.
     INTERFACES zif_excel_writer .
+
+    "! Default value for initial dates e.g. user's format (DD.MM.YYYY, MM.DD.YYYY, etc.)
+    CONSTANTS c_default TYPE c LENGTH 10 VALUE 'DEFAULT' ##NO_TEXT.
 
     CLASS-METHODS set_delimiter
       IMPORTING
@@ -27,13 +28,13 @@ CLASS zcl_excel_writer_csv DEFINITION
     CLASS-METHODS set_encoding
       IMPORTING
         VALUE(ip_value) TYPE abap_encoding .
-*"* protected components of class ZCL_EXCEL_WRITER_2007
-*"* do not include other source files here!!!
-  PROTECTED SECTION.
-*"* private components of class ZCL_EXCEL_WRITER_CSV
-*"* do not include other source files here!!!
-  PRIVATE SECTION.
+    CLASS-METHODS set_initial_ext_date
+      IMPORTING
+        !ip_value TYPE char10 DEFAULT c_default .
 
+  PROTECTED SECTION.
+
+  PRIVATE SECTION.
     DATA excel TYPE REF TO zcl_excel .
     CLASS-DATA delimiter TYPE c VALUE ';' ##NO_TEXT.
     CLASS-DATA enclosure TYPE c VALUE '"' ##NO_TEXT.
@@ -42,6 +43,7 @@ CLASS zcl_excel_writer_csv DEFINITION
     CLASS-DATA worksheet_name TYPE zexcel_worksheets_name .
     CLASS-DATA worksheet_index TYPE zexcel_active_worksheet .
     CLASS-DATA encoding TYPE abap_encoding .
+    CLASS-DATA initial_ext_date TYPE char10 VALUE c_default.
 
     METHODS create
       RETURNING
@@ -57,7 +59,7 @@ ENDCLASS.
 
 
 
-CLASS zcl_excel_writer_csv IMPLEMENTATION.
+CLASS ZCL_EXCEL_WRITER_CSV IMPLEMENTATION.
 
 
   METHOD create.
@@ -224,24 +226,28 @@ CLASS zcl_excel_writer_csv IMPLEMENTATION.
       CASE <fs_sheet_content>-data_type.
 
         WHEN 'd' OR 'D'.
-          lc_value = zcl_excel_common=>excel_string_to_date( ip_value = <fs_sheet_content>-cell_value ).
-          TRY.
-              lv_date = lc_value.
-              CALL FUNCTION 'CONVERT_DATE_TO_EXTERNAL'
-                EXPORTING
-                  date_internal            = lv_date
-                IMPORTING
-                  date_external            = lv_tmp
-                EXCEPTIONS
-                  date_internal_is_invalid = 1
-                  OTHERS                   = 2.
-              IF sy-subrc = 0.
-                lc_value = lv_tmp.
-              ENDIF.
+          IF <fs_sheet_content>-cell_value IS INITIAL AND initial_ext_date <> c_default.
+            lc_value = initial_ext_date.
+          ELSE.
+            lc_value = zcl_excel_common=>excel_string_to_date( ip_value = <fs_sheet_content>-cell_value ).
+            TRY.
+                lv_date = lc_value.
+                CALL FUNCTION 'CONVERT_DATE_TO_EXTERNAL'
+                  EXPORTING
+                    date_internal            = lv_date
+                  IMPORTING
+                    date_external            = lv_tmp
+                  EXCEPTIONS
+                    date_internal_is_invalid = 1
+                    OTHERS                   = 2.
+                IF sy-subrc = 0.
+                  lc_value = lv_tmp.
+                ENDIF.
 
-            CATCH cx_sy_conversion_no_number.
+              CATCH cx_sy_conversion_no_number.
 
-          ENDTRY.
+            ENDTRY.
+          ENDIF.
 
         WHEN 't' OR 'T'.
           lc_value = zcl_excel_common=>excel_string_to_time( ip_value = <fs_sheet_content>-cell_value ).
@@ -309,6 +315,11 @@ CLASS zcl_excel_writer_csv IMPLEMENTATION.
 
   METHOD set_encoding.
     zcl_excel_writer_csv=>encoding = ip_value.
+  ENDMETHOD.
+  
+  
+  METHOD set_initial_ext_date.
+    initial_ext_date = ip_value.
   ENDMETHOD.
 
 
