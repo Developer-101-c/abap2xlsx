@@ -1083,6 +1083,10 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
 
       lv_column_alpha = zcl_excel_common=>convert_column2alpha( lv_column_int ).
 
+      IF <ls_field_catalog>-width IS NOT INITIAL.
+        set_column_width( ip_column = lv_column_alpha ip_width_fix = <ls_field_catalog>-width ).
+      ENDIF.
+
       " First of all write column header
       IF <ls_field_catalog>-style_header IS NOT INITIAL.
         me->set_cell( ip_column = lv_column_alpha
@@ -2328,7 +2332,8 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
             IF sy-subrc EQ 0.
               CASE ls_style_conv-abap_type.
                 WHEN cl_abap_typedescr=>typekind_date.
-                  <lv_data> = zcl_excel_common=>excel_string_to_date( <ls_sheet_content>-cell_value ).
+                  <lv_data> = zcl_excel_common=>excel_string_to_date( ip_value = <ls_sheet_content>-cell_value
+                                                                      ip_exact = abap_true ).
                 WHEN cl_abap_typedescr=>typekind_time.
                   <lv_data> = zcl_excel_common=>excel_string_to_time( <ls_sheet_content>-cell_value ).
               ENDCASE.
@@ -4433,7 +4438,7 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
 
   METHOD set_table.
 
-    DATA: lo_tabdescr     TYPE REF TO cl_abap_structdescr,
+    DATA: lo_structdescr     TYPE REF TO cl_abap_structdescr,
           lr_data         TYPE REF TO data,
           lt_dfies        TYPE ddfields,
           lv_row_int      TYPE zexcel_cell_row,
@@ -4451,9 +4456,9 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
 
     CREATE DATA lr_data LIKE LINE OF ip_table.
 
-    lo_tabdescr ?= cl_abap_structdescr=>describe_by_data_ref( lr_data ).
+    lo_structdescr ?= cl_abap_structdescr=>describe_by_data_ref( lr_data ).
 
-    lt_dfies = lo_tabdescr->get_ddic_field_list( ).
+    lt_dfies = zcl_excel_common=>describe_structure( io_struct = lo_structdescr ).
 
 * It is better to loop column by column
     LOOP AT lt_dfies ASSIGNING <fs_dfies>.
