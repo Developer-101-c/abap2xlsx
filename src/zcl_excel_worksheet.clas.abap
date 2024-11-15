@@ -709,7 +709,8 @@ CLASS zcl_excel_worksheet DEFINITION
 *"* do not include other source files here!!!
     TYPES ty_table_settings TYPE STANDARD TABLE OF zexcel_s_table_settings WITH DEFAULT KEY.
 
-    CLASS-DATA typekind_utclong TYPE abap_typekind.
+    CONSTANTS typekind_utclong TYPE abap_typekind VALUE 'p'.
+
     CLASS-DATA variable_utclong TYPE REF TO data.
 
     DATA active_cell TYPE zexcel_s_cell_data .
@@ -1303,6 +1304,8 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
           ld_flag_italic               TYPE abap_bool VALUE abap_false,
           ld_date                      TYPE d,
           ld_date_char                 TYPE c LENGTH 50,
+          ld_time                      TYPE t,
+          ld_time_char                 TYPE c LENGTH 20,
           ld_font_height               TYPE zcl_excel_font=>ty_font_height VALUE zcl_excel_font=>lc_default_font_height,
           ld_font_name                 TYPE zexcel_style_font_name VALUE zcl_excel_font=>lc_default_font_name.
 
@@ -1348,20 +1351,27 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
 
           " If the current cell contains the default date format,
           " convert the cell value to a date and calculate its length
-          IF ls_stylemapping-complete_style-number_format-format_code =
-             zcl_excel_style_number_format=>c_format_date_std.
+          CASE ls_stylemapping-complete_style-number_format-format_code.
+            WHEN zcl_excel_style_number_format=>c_format_date_std.
 
-            " Convert excel date to ABAP date
-            ld_date =
-              zcl_excel_common=>excel_string_to_date( ld_cell_value ).
+              " Convert excel date to ABAP date
+              ld_date =
+                zcl_excel_common=>excel_string_to_date( ld_cell_value ).
 
-            " Format ABAP date using user's formatting settings
-            WRITE ld_date TO ld_date_char.
+              " Format ABAP date using user's formatting settings
+              WRITE ld_date TO ld_date_char.
 
-            " Remember the formatted date to calculate the cell size
-            ld_cell_value = ld_date_char.
+              " Remember the formatted date to calculate the cell size
+              ld_cell_value = ld_date_char.
 
-          ENDIF.
+            WHEN get_default_excel_time_format( ).
+
+              ld_time = zcl_excel_common=>excel_string_to_time( ld_cell_value ).
+              WRITE ld_time TO ld_time_char.
+              ld_cell_value = ld_time_char.
+
+          ENDCASE.
+
 
           " Read the font size and convert it to the font height
           " used by SAPscript (multiplication by 10)
@@ -2037,7 +2047,6 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
 
     ASSIGN ('CL_ABAP_TYPEDESCR=>TYPEKIND_UTCLONG') TO <lv_typekind>.
     IF sy-subrc = 0.
-      typekind_utclong = <lv_typekind>.
       CALL METHOD cl_abap_elemdescr=>('GET_UTCLONG') RECEIVING p_result = lo_rtti.
       CREATE DATA variable_utclong TYPE HANDLE lo_rtti.
     ENDIF.
@@ -3483,26 +3492,17 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
 
   METHOD normalize_style_parameter.
 
-    DATA: lo_style_type TYPE REF TO cl_abap_typedescr.
-    FIELD-SYMBOLS:
-      <style> TYPE REF TO zcl_excel_style.
+    DATA lo_style_type TYPE REF TO cl_abap_typedescr.
+    FIELD-SYMBOLS <style> TYPE REF TO zcl_excel_style.
 
     CHECK ip_style_or_guid IS NOT INITIAL.
 
     lo_style_type = cl_abap_typedescr=>describe_by_data( ip_style_or_guid ).
     IF lo_style_type->type_kind = lo_style_type->typekind_oref.
-      lo_style_type = cl_abap_typedescr=>describe_by_object_ref( ip_style_or_guid ).
-      IF lo_style_type->absolute_name = '\CLASS=ZCL_EXCEL_STYLE'.
-        ASSIGN ip_style_or_guid TO <style>.
-        rv_guid = <style>->get_guid( ).
-      ENDIF.
-
-    ELSEIF lo_style_type->absolute_name = '\TYPE=ZEXCEL_CELL_STYLE'.
-      rv_guid = ip_style_or_guid.
-
+      ASSIGN ip_style_or_guid TO <style>.
+      rv_guid = <style>->get_guid( ).
     ELSEIF lo_style_type->type_kind = lo_style_type->typekind_hex.
       rv_guid = ip_style_or_guid.
-
     ELSE.
       RAISE EXCEPTION TYPE zcx_excel EXPORTING error = 'IP_GUID type must be either REF TO zcl_excel_style or zexcel_cell_style'.
     ENDIF.
@@ -4474,7 +4474,7 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
 
   METHOD set_table.
 
-    DATA: lo_structdescr     TYPE REF TO cl_abap_structdescr,
+    DATA: lo_structdescr  TYPE REF TO cl_abap_structdescr,
           lr_data         TYPE REF TO data,
           lt_dfies        TYPE ddfields,
           lv_row_int      TYPE zexcel_cell_row,
