@@ -708,6 +708,11 @@ CLASS zcl_excel_worksheet DEFINITION
 *"* private components of class ZCL_EXCEL_WORKSHEET
 *"* do not include other source files here!!!
     TYPES ty_table_settings TYPE STANDARD TABLE OF zexcel_s_table_settings WITH DEFAULT KEY.
+
+    CONSTANTS typekind_utclong TYPE abap_typekind VALUE 'p'.
+
+    CLASS-DATA variable_utclong TYPE REF TO data.
+
     DATA active_cell TYPE zexcel_s_cell_data .
     DATA charts TYPE REF TO zcl_excel_drawings .
     DATA columns TYPE REF TO zcl_excel_columns .
@@ -1299,7 +1304,9 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
           ld_flag_italic               TYPE abap_bool VALUE abap_false,
           ld_date                      TYPE d,
           ld_date_char                 TYPE c LENGTH 50,
-          ld_font_height               TYPE tdfontsize VALUE zcl_excel_font=>lc_default_font_height,
+          ld_time                      TYPE t,
+          ld_time_char                 TYPE c LENGTH 20,
+          ld_font_height               TYPE zcl_excel_font=>ty_font_height VALUE zcl_excel_font=>lc_default_font_height,
           ld_font_name                 TYPE zexcel_style_font_name VALUE zcl_excel_font=>lc_default_font_name.
 
     " Determine cell content and cell style
@@ -1344,20 +1351,27 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
 
           " If the current cell contains the default date format,
           " convert the cell value to a date and calculate its length
-          IF ls_stylemapping-complete_style-number_format-format_code =
-             zcl_excel_style_number_format=>c_format_date_std.
+          CASE ls_stylemapping-complete_style-number_format-format_code.
+            WHEN zcl_excel_style_number_format=>c_format_date_std.
 
-            " Convert excel date to ABAP date
-            ld_date =
-              zcl_excel_common=>excel_string_to_date( ld_cell_value ).
+              " Convert excel date to ABAP date
+              ld_date =
+                zcl_excel_common=>excel_string_to_date( ld_cell_value ).
 
-            " Format ABAP date using user's formatting settings
-            WRITE ld_date TO ld_date_char.
+              " Format ABAP date using user's formatting settings
+              WRITE ld_date TO ld_date_char.
 
-            " Remember the formatted date to calculate the cell size
-            ld_cell_value = ld_date_char.
+              " Remember the formatted date to calculate the cell size
+              ld_cell_value = ld_date_char.
 
-          ENDIF.
+            WHEN get_default_excel_time_format( ).
+
+              ld_time = zcl_excel_common=>excel_string_to_time( ld_cell_value ).
+              WRITE ld_time TO ld_time_char.
+              ld_cell_value = ld_time_char.
+
+          ENDCASE.
+
 
           " Read the font size and convert it to the font height
           " used by SAPscript (multiplication by 10)
@@ -2023,11 +2037,19 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
 
 
   METHOD class_constructor.
+    FIELD-SYMBOLS <lv_typekind> TYPE abap_typekind.
+    DATA lo_rtti TYPE REF TO cl_abap_datadescr.
 
     c_messages-formula_id_only_is_possible = |{ 'If Formula ID is used, value and formula must be empty'(008) }|.
     c_messages-column_formula_id_not_found = |{ 'The Column Formula does not exist'(009) }|.
     c_messages-formula_not_in_this_table = |{ 'The cell uses a Column Formula which should be part of the same table'(010) }|.
     c_messages-formula_in_other_column = |{ 'The cell uses a Column Formula which is in a different column'(011) }|.
+
+    ASSIGN ('CL_ABAP_TYPEDESCR=>TYPEKIND_UTCLONG') TO <lv_typekind>.
+    IF sy-subrc = 0.
+      CALL METHOD cl_abap_elemdescr=>('GET_UTCLONG') RECEIVING p_result = lo_rtti.
+      CREATE DATA variable_utclong TYPE HANDLE lo_rtti.
+    ENDIF.
 
   ENDMETHOD.
 
@@ -3470,26 +3492,17 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
 
   METHOD normalize_style_parameter.
 
-    DATA: lo_style_type TYPE REF TO cl_abap_typedescr.
-    FIELD-SYMBOLS:
-      <style> TYPE REF TO zcl_excel_style.
+    DATA lo_style_type TYPE REF TO cl_abap_typedescr.
+    FIELD-SYMBOLS <style> TYPE REF TO zcl_excel_style.
 
     CHECK ip_style_or_guid IS NOT INITIAL.
 
     lo_style_type = cl_abap_typedescr=>describe_by_data( ip_style_or_guid ).
     IF lo_style_type->type_kind = lo_style_type->typekind_oref.
-      lo_style_type = cl_abap_typedescr=>describe_by_object_ref( ip_style_or_guid ).
-      IF lo_style_type->absolute_name = '\CLASS=ZCL_EXCEL_STYLE'.
-        ASSIGN ip_style_or_guid TO <style>.
-        rv_guid = <style>->get_guid( ).
-      ENDIF.
-
-    ELSEIF lo_style_type->absolute_name = '\TYPE=ZEXCEL_CELL_STYLE'.
-      rv_guid = ip_style_or_guid.
-
+      ASSIGN ip_style_or_guid TO <style>.
+      rv_guid = <style>->get_guid( ).
     ELSEIF lo_style_type->type_kind = lo_style_type->typekind_hex.
       rv_guid = ip_style_or_guid.
-
     ELSE.
       RAISE EXCEPTION TYPE zcx_excel EXPORTING error = 'IP_GUID type must be either REF TO zcl_excel_style or zexcel_cell_style'.
     ENDIF.
@@ -3847,6 +3860,7 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
                    <fs_typekind_int8> TYPE abap_typekind.
     FIELD-SYMBOLS: <fs_column_formula> TYPE mty_s_column_formula.
     FIELD-SYMBOLS: <ls_fieldcat>       TYPE zexcel_s_fieldcatalog.
+    FIELD-SYMBOLS <lv_utclong>         TYPE simple.
 
     IF ip_value  IS NOT SUPPLIED
         AND ip_formula IS NOT SUPPLIED
@@ -3990,6 +4004,13 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
 *          ENDIF.
 * End of change issue #152 - don't touch exisiting style if only value is passed
 
+          WHEN typekind_utclong.
+            ASSIGN variable_utclong->* TO <lv_utclong>.
+            IF sy-subrc = 0.
+              <lv_utclong> = <fs_value>.
+              lv_value = zcl_excel_common=>utclong_to_excel_string( <lv_utclong> ).
+            ENDIF.
+
           WHEN OTHERS.
             zcx_excel=>raise_text( 'Invalid data type of input value' ).
         ENDCASE.
@@ -4088,6 +4109,21 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
         IF stylemapping-complete_stylex-number_format-format_code IS INITIAL OR
            stylemapping-complete_style-number_format-format_code IS INITIAL.
           lo_format_code_datetime = zcl_excel_style_number_format=>c_format_date_time6.
+        ELSE.
+          lo_format_code_datetime = stylemapping-complete_style-number_format-format_code.
+        ENDIF.
+        me->change_cell_style( ip_column                      = lv_column
+                               ip_row                         = lv_row
+                               ip_number_format_format_code   = lo_format_code_datetime ).
+
+      WHEN typekind_utclong.
+        TRY.
+            stylemapping = me->excel->get_style_to_guid( <fs_sheet_content>-cell_style ).
+          CATCH zcx_excel .
+        ENDTRY.
+        IF stylemapping-complete_stylex-number_format-format_code IS INITIAL OR
+           stylemapping-complete_style-number_format-format_code IS INITIAL.
+          lo_format_code_datetime = zcl_excel_style_number_format=>c_format_date_datetime.
         ELSE.
           lo_format_code_datetime = stylemapping-complete_style-number_format-format_code.
         ENDIF.
@@ -4438,7 +4474,7 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
 
   METHOD set_table.
 
-    DATA: lo_structdescr     TYPE REF TO cl_abap_structdescr,
+    DATA: lo_structdescr  TYPE REF TO cl_abap_structdescr,
           lr_data         TYPE REF TO data,
           lt_dfies        TYPE ddfields,
           lv_row_int      TYPE zexcel_cell_row,
@@ -4505,27 +4541,8 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
 
 
   METHOD set_title.
-*--------------------------------------------------------------------*
-* ToDos:
-*        2do §1  The current coding for replacing a named ranges name
-*                after renaming a sheet should be checked if it is
-*                really working if sheetname should be escaped
-*--------------------------------------------------------------------*
-
-*--------------------------------------------------------------------*
-* issue #230   - Pimp my Code
-*              - Stefan Schmoecker,      (wip )              2012-12-08
-*              - ...
-* changes: aligning code
-*          message made to support multilinguality
-*--------------------------------------------------------------------*
-* issue#243 - ' is not allowed as first character in sheet title
-*              - Stefan Schmoecker,                          2012-12-02
-* changes: added additional check for ' as first character
-*--------------------------------------------------------------------*
     DATA: lo_worksheets_iterator TYPE REF TO zcl_excel_collection_iterator,
           lo_worksheet           TYPE REF TO zcl_excel_worksheet,
-          errormessage           TYPE string,
           lv_rangesheetname_old  TYPE string,
           lv_rangesheetname_new  TYPE string,
           lo_ranges_iterator     TYPE REF TO zcl_excel_collection_iterator,
@@ -4555,14 +4572,14 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
 * Check whether title is unique in workbook
 *--------------------------------------------------------------------*
     lo_worksheets_iterator = me->excel->get_worksheets_iterator( ).
-    WHILE lo_worksheets_iterator->has_next( ) = 'X'.
+    WHILE lo_worksheets_iterator->has_next( ) = abap_true.
 
       lo_worksheet ?= lo_worksheets_iterator->get_next( ).
       CHECK me->guid <> lo_worksheet->get_guid( ).  " Don't check against itself
       IF ip_title = lo_worksheet->get_title( ).  " Not unique --> raise exception
-        errormessage = 'Duplicate sheetname &'.
-        REPLACE '&' IN errormessage WITH ip_title.
-        zcx_excel=>raise_text( errormessage ).
+        lv_errormessage = 'Duplicate sheetname &'.
+        REPLACE '&' IN lv_errormessage WITH ip_title.
+        zcx_excel=>raise_text( lv_errormessage ).
       ENDIF.
 
     ENDWHILE.
@@ -4570,21 +4587,17 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
 *--------------------------------------------------------------------*
 * Remember old sheetname and rename sheet to desired name
 *--------------------------------------------------------------------*
-    CONCATENATE me->title '!' INTO lv_rangesheetname_old.
+    lv_rangesheetname_old = zcl_excel_common=>escape_string( me->title ) && '!'.
     me->title = ip_title.
 
 *--------------------------------------------------------------------*
 * After changing this worksheet's title we have to adjust
 * all ranges that are referring to this worksheet.
 *--------------------------------------------------------------------*
-* 2do §1  -  Check if the following quickfix is solid
-*           I fear it isn't - but this implementation is better then
-*           nothing at all since it handles a supposed majority of cases
-*--------------------------------------------------------------------*
-    CONCATENATE me->title '!' INTO lv_rangesheetname_new.
+    lv_rangesheetname_new = zcl_excel_common=>escape_string( me->title ) && '!'.
 
-    lo_ranges_iterator = me->excel->get_ranges_iterator( ).
-    WHILE lo_ranges_iterator->has_next( ) = 'X'.
+    lo_ranges_iterator = me->excel->get_ranges_iterator( ).  "workbookglobal ranges
+    WHILE lo_ranges_iterator->has_next( ) = abap_true.
 
       lo_range ?= lo_ranges_iterator->get_next( ).
       lv_range_value = lo_range->get_value( ).
@@ -4594,6 +4607,20 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
       ENDIF.
 
     ENDWHILE.
+
+    IF me->ranges IS BOUND.  "not yet bound if called from worksheet's constructor
+      lo_ranges_iterator = me->get_ranges_iterator( ).  "sheetlocal ranges, repeat rows and columns
+      WHILE lo_ranges_iterator->has_next( ) = abap_true.
+
+        lo_range ?= lo_ranges_iterator->get_next( ).
+        lv_range_value = lo_range->get_value( ).
+        REPLACE ALL OCCURRENCES OF lv_rangesheetname_old IN lv_range_value WITH lv_rangesheetname_new.
+        IF sy-subrc = 0.
+          lo_range->set_range_value( lv_range_value ).
+        ENDIF.
+
+      ENDWHILE.
+    ENDIF.
 
 
   ENDMETHOD.                    "SET_TITLE

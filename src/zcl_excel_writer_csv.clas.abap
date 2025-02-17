@@ -31,6 +31,12 @@ CLASS zcl_excel_writer_csv DEFINITION
     CLASS-METHODS set_initial_ext_date
       IMPORTING
         !ip_value TYPE char10 DEFAULT c_default .
+    CLASS-METHODS set_skip_hidden_rows
+      IMPORTING
+        !ip_value TYPE abap_bool.
+    CLASS-METHODS set_skip_hidden_columns
+      IMPORTING
+        !ip_value TYPE abap_bool.
 
   PROTECTED SECTION.
 
@@ -44,6 +50,8 @@ CLASS zcl_excel_writer_csv DEFINITION
     CLASS-DATA worksheet_index TYPE zexcel_active_worksheet .
     CLASS-DATA encoding TYPE abap_encoding .
     CLASS-DATA initial_ext_date TYPE char10 VALUE c_default.
+    CLASS-DATA skip_hidden_rows TYPE abap_bool.
+    CLASS-DATA skip_hidden_columns TYPE abap_bool.
 
     METHODS create
       RETURNING
@@ -90,6 +98,9 @@ CLASS ZCL_EXCEL_WRITER_CSV IMPLEMENTATION.
     DATA: lo_iterator  TYPE REF TO zcl_excel_collection_iterator,
           lo_worksheet TYPE REF TO zcl_excel_worksheet.
 
+    DATA: lo_autofilter TYPE REF TO zcl_excel_autofilter.
+    DATA: lv_row_hidden TYPE abap_bool.
+
     DATA: lt_cell_data TYPE zexcel_t_cell_data_unsorted,
           lv_row       TYPE i,
           lv_col       TYPE i,
@@ -112,8 +123,9 @@ CLASS ZCL_EXCEL_WRITER_CSV IMPLEMENTATION.
 * --- Retrieve SAP date format
     CLEAR ls_format.
     SELECT ddtext INTO ls_format-attvalue FROM dd07t WHERE domname    = 'XUDATFM'
-                                                       AND ddlanguage = sy-langu.
+                                                       AND ( ddlanguage = sy-langu OR ddlanguage = 'E' ).
       ls_format-cmpname = 'DATE'.
+      ls_format-attvalue = ls_format-attvalue(10). " Ignore description, only use pattern
       CONDENSE ls_format-attvalue.
       CONCATENATE '''' ls_format-attvalue '''' INTO ls_format-attvalue.
       APPEND ls_format TO lt_format.
@@ -150,10 +162,53 @@ CLASS ZCL_EXCEL_WRITER_CSV IMPLEMENTATION.
 
     SORT lt_cell_data BY cell_row
                          cell_column.
+
+    IF skip_hidden_rows = abap_true.
+* --- Retrieve autofilters (to identify hidden rows)
+      lo_autofilter = excel->get_autofilters_reference( )->get( io_worksheet = lo_worksheet ).
+      IF lo_autofilter IS NOT INITIAL.
+        lo_autofilter->get_filter_area( ). " trigger filter area validation
+      ENDIF.
+    ENDIF.
+
     lv_row = 1.
     lv_col = 1.
     CLEAR lv_string.
     LOOP AT lt_cell_data ASSIGNING <fs_sheet_content>.
+
+* --- Check, if row is hidden
+      AT NEW cell_row.
+        IF lo_autofilter IS NOT INITIAL.
+          lv_row_hidden = lo_autofilter->is_row_hidden( iv_row = <fs_sheet_content>-cell_row ).
+        ENDIF.
+      ENDAT.
+
+* --- Add empty rows
+      WHILE lv_row < <fs_sheet_content>-cell_row.
+        CONCATENATE lv_string zcl_excel_writer_csv=>eol INTO lv_string.
+        lv_row = lv_row + 1.
+        lv_col = 1.
+      ENDWHILE.
+
+* --- Skip hidden rows
+      IF lv_row_hidden = abap_true.
+        lv_row = <fs_sheet_content>-cell_row + 1.
+        lv_col = 1.
+        CONTINUE.
+      ENDIF.
+
+* --- Add empty columns
+      WHILE lv_col < <fs_sheet_content>-cell_column.
+        CONCATENATE lv_string zcl_excel_writer_csv=>delimiter INTO lv_string.
+        lv_col = lv_col + 1.
+      ENDWHILE.
+
+* --- Skip hidden columns
+      IF skip_hidden_columns = abap_true AND
+          lo_worksheet->get_column( ip_column = <fs_sheet_content>-cell_column )->get_visible( ) = abap_false.
+        lv_col = <fs_sheet_content>-cell_column + 1.
+        CONTINUE.
+      ENDIF.
 
 *   --- Retrieve Cell Style format and data type
       CLEAR ls_numfmt.
@@ -208,19 +263,6 @@ CLASS ZCL_EXCEL_WRITER_CSV IMPLEMENTATION.
           ENDIF. " DATETIME
         ENDIF. " lv_attrname IS NOT INITIAL.
       ENDIF. " <fs_sheet_content>-data_type IS INITIAL AND ls_numfmt IS NOT INITIAL.
-
-* --- Add empty rows
-      WHILE lv_row < <fs_sheet_content>-cell_row.
-        CONCATENATE lv_string zcl_excel_writer_csv=>eol INTO lv_string.
-        lv_row = lv_row + 1.
-        lv_col = 1.
-      ENDWHILE.
-
-* --- Add empty columns
-      WHILE lv_col < <fs_sheet_content>-cell_column.
-        CONCATENATE lv_string zcl_excel_writer_csv=>delimiter INTO lv_string.
-        lv_col = lv_col + 1.
-      ENDWHILE.
 
 * ----- Use format to determine the data type and display format.
       CASE <fs_sheet_content>-data_type.
@@ -304,22 +346,32 @@ CLASS ZCL_EXCEL_WRITER_CSV IMPLEMENTATION.
 
 
   METHOD set_enclosure.
-    zcl_excel_writer_csv=>enclosure = ip_value.
+    enclosure = ip_value.
   ENDMETHOD.
 
 
   METHOD set_endofline.
-    zcl_excel_writer_csv=>eol = ip_value.
+    eol = ip_value.
   ENDMETHOD.
 
 
   METHOD set_encoding.
-    zcl_excel_writer_csv=>encoding = ip_value.
+    encoding = ip_value.
   ENDMETHOD.
   
   
   METHOD set_initial_ext_date.
     initial_ext_date = ip_value.
+  ENDMETHOD.
+
+
+  METHOD set_skip_hidden_rows.
+    skip_hidden_rows = ip_value.
+  ENDMETHOD.
+
+
+  METHOD set_skip_hidden_columns.
+    skip_hidden_columns = ip_value.
   ENDMETHOD.
 
 
