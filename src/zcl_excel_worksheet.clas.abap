@@ -21,8 +21,8 @@ CLASS zcl_excel_worksheet DEFINITION
         row_to    TYPE i,
         collapsed TYPE abap_bool,
       END OF mty_s_outline_row .
-    TYPES:
-      mty_ts_outlines_row TYPE SORTED TABLE OF mty_s_outline_row WITH UNIQUE KEY row_from row_to .
+    TYPES: mty_ts_outlines_row TYPE SORTED TABLE OF mty_s_outline_row WITH UNIQUE KEY primary_key COMPONENTS row_from row_to
+                                                                      WITH NON-UNIQUE SORTED KEY row_to COMPONENTS row_to collapsed.
     TYPES:
       BEGIN OF mty_s_ignored_errors,
         "! Cell reference (e.g. "A1") or list like "A1 A2" or range "A1:G1"
@@ -74,7 +74,8 @@ CLASS zcl_excel_worksheet DEFINITION
         col_to   TYPE i,
       END OF mty_merge .
     TYPES:
-      mty_ts_merge TYPE SORTED TABLE OF mty_merge WITH UNIQUE KEY table_line .
+        mty_ts_merge TYPE SORTED TABLE OF mty_merge WITH UNIQUE KEY table_line.
+
     TYPES:
       ty_area TYPE c LENGTH 1 .
 
@@ -1948,7 +1949,7 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
   METHOD check_rtf.
 
     DATA: lo_style           TYPE REF TO zcl_excel_style,
-          lo_iterator        TYPE REF TO zcl_excel_collection_iterator,
+          ls_font            TYPE zexcel_s_style_font,
           lv_next_rtf_offset TYPE i,
           lv_tabix           TYPE i,
           lv_value           TYPE string,
@@ -1960,14 +1961,8 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
       ip_style = excel->get_default_style( ).
     ENDIF.
 
-    lo_iterator = excel->get_styles_iterator( ).
-    WHILE lo_iterator->has_next( ) = abap_true.
-      lo_style ?= lo_iterator->get_next( ).
-      IF lo_style->get_guid( ) = ip_style.
-        EXIT.
-      ENDIF.
-      CLEAR lo_style.
-    ENDWHILE.
+    lo_style = excel->get_style_from_guid( ip_style ).
+    ls_font  = lo_style->font->get_structure( ).
 
     lv_next_rtf_offset = 0.
     LOOP AT ct_rtf ASSIGNING <rtf>.
@@ -1975,7 +1970,7 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
       IF lv_next_rtf_offset < <rtf>-offset.
         ls_rtf-offset = lv_next_rtf_offset.
         ls_rtf-length = <rtf>-offset - lv_next_rtf_offset.
-        ls_rtf-font   = lo_style->font->get_structure( ).
+        ls_rtf-font   = ls_font.
         INSERT ls_rtf INTO ct_rtf INDEX lv_tabix.
       ELSEIF lv_next_rtf_offset > <rtf>-offset.
         RAISE EXCEPTION TYPE zcx_excel
@@ -1990,9 +1985,9 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
     IF lv_val_length > lv_next_rtf_offset.
       ls_rtf-offset = lv_next_rtf_offset.
       ls_rtf-length = lv_val_length - lv_next_rtf_offset.
-      ls_rtf-font   = lo_style->font->get_structure( ).
+      ls_rtf-font   = ls_font.
       INSERT ls_rtf INTO TABLE ct_rtf.
-    ELSEIF lv_val_length > lv_next_rtf_offset.
+    ELSEIF lv_val_length < lv_next_rtf_offset.
       RAISE EXCEPTION TYPE zcx_excel
         EXPORTING
           error = 'RTF specs length is not equal to value length'.
@@ -2269,7 +2264,7 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
     ENDIF.
 
     " Date & Time in excel style
-    LOOP AT me->sheet_content ASSIGNING <ls_sheet_content> WHERE cell_style IS NOT INITIAL AND data_type IS INITIAL.
+    LOOP AT me->sheet_content ASSIGNING <ls_sheet_content> WHERE cell_style IS NOT INITIAL AND data_type IS INITIAL. "#EC CI_SORTSEQ
       ls_style_conv-cell_style = <ls_sheet_content>-cell_style.
       APPEND ls_style_conv TO lt_style_conv.
     ENDLOOP.
@@ -2441,7 +2436,7 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
 
       LOOP AT me->mt_merged_cells TRANSPORTING NO FIELDS
       WHERE row_from <= ip_cell_row AND row_to >= ip_cell_row
-        AND col_from <= lv_column AND col_to >= lv_column.
+        AND col_from <= lv_column AND col_to >= lv_column. "#EC CI_SORTSEQ
         DELETE me->mt_merged_cells.
         EXIT.
       ENDLOOP.
@@ -2656,7 +2651,7 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
 
 
   METHOD get_default_excel_date_format.
-    CONSTANTS: c_lang_e TYPE lang VALUE 'E'.
+    CONSTANTS c_lang_e TYPE langu VALUE 'E'.
 
     IF default_excel_date_format IS NOT INITIAL.
       ep_default_excel_date_format = default_excel_date_format.
@@ -3966,7 +3961,7 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
             ENDIF.
 
           WHEN cl_abap_typedescr=>typekind_char OR cl_abap_typedescr=>typekind_string OR cl_abap_typedescr=>typekind_num OR
-               cl_abap_typedescr=>typekind_hex.
+               cl_abap_typedescr=>typekind_hex OR cl_abap_typedescr=>typekind_xstring.
             lv_value = <fs_value>.
             lv_data_type = 's'.
 
@@ -4319,7 +4314,7 @@ CLASS zcl_excel_worksheet IMPLEMENTATION.
     LOOP AT me->mt_merged_cells TRANSPORTING NO FIELDS WHERE NOT (    row_from > ls_merge-row_to
                                                                    OR row_to   < ls_merge-row_from
                                                                    OR col_from > ls_merge-col_to
-                                                                   OR col_to   < ls_merge-col_from ).
+                                                                   OR col_to   < ls_merge-col_from ). "#EC CI_SORTSEQ
       lv_errormessage = 'Overlapping merges'(404).
       zcx_excel=>raise_text( lv_errormessage ).
 

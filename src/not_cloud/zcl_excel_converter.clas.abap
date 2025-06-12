@@ -524,8 +524,7 @@ CLASS zcl_excel_converter IMPLEMENTATION.
   METHOD create_color_style.
     DATA: ls_styles TYPE ts_styles.
     DATA: lo_style TYPE REF TO zcl_excel_style.
-
-    READ TABLE wt_styles INTO ls_styles WITH KEY guid = i_style.
+    READ TABLE wt_styles INTO ls_styles WITH KEY guid COMPONENTS guid = i_style.
     IF sy-subrc = 0.
       lo_style                 = wo_excel->add_new_style( ).
       lo_style->font->bold                 = ls_styles-style->font->bold.
@@ -1251,27 +1250,29 @@ CLASS zcl_excel_converter IMPLEMENTATION.
         l_table_row = sy-tabix.
 * Now the cell values
         ASSIGN COMPONENT <fs_sfcat>-columnname OF STRUCTURE <fs_stab> TO <fs_fldval>.
+        IF sy-subrc = 0.
 * Now let's write the cell values
-        IF ws_layout-is_stripped = abap_true AND l_s_color = abap_true.
-          l_style = get_color_style( i_row       = l_table_row
-                                     i_fieldname = <fs_sfcat>-columnname
-                                     i_style     = <fs_sfcat>-style_stripped  ).
-          wo_worksheet->set_cell( ip_column    = l_col_alpha
-                                  ip_row       = l_row_int
-                                  ip_value     = <fs_fldval>
-                                  ip_style     = l_style
-                                  ip_conv_exit_length = ws_option-conv_exit_length ).
-          CLEAR l_s_color.
-        ELSE.
-          l_style = get_color_style( i_row       = l_table_row
-                                     i_fieldname = <fs_sfcat>-columnname
-                                     i_style     = <fs_sfcat>-style_normal  ).
-          wo_worksheet->set_cell( ip_column    = l_col_alpha
-                                  ip_row       = l_row_int
-                                  ip_value     = <fs_fldval>
-                                  ip_style     = l_style
-                                  ip_conv_exit_length = ws_option-conv_exit_length  ).
-          l_s_color = abap_true.
+          IF ws_layout-is_stripped = abap_true AND l_s_color = abap_true.
+            l_style = get_color_style( i_row       = l_table_row
+                                       i_fieldname = <fs_sfcat>-columnname
+                                       i_style     = <fs_sfcat>-style_stripped  ).
+            wo_worksheet->set_cell( ip_column    = l_col_alpha
+                                    ip_row       = l_row_int
+                                    ip_value     = <fs_fldval>
+                                    ip_style     = l_style
+                                    ip_conv_exit_length = ws_option-conv_exit_length ).
+            CLEAR l_s_color.
+          ELSE.
+            l_style = get_color_style( i_row       = l_table_row
+                                       i_fieldname = <fs_sfcat>-columnname
+                                       i_style     = <fs_sfcat>-style_normal  ).
+            wo_worksheet->set_cell( ip_column    = l_col_alpha
+                                    ip_row       = l_row_int
+                                    ip_value     = <fs_fldval>
+                                    ip_style     = l_style
+                                    ip_conv_exit_length = ws_option-conv_exit_length  ).
+            l_s_color = abap_true.
+          ENDIF.
         ENDIF.
         READ TABLE wt_filter TRANSPORTING NO FIELDS WITH TABLE KEY rownumber  = l_table_row
                                                                    columnname = <fs_sfcat>-columnname.
@@ -1376,7 +1377,7 @@ CLASS zcl_excel_converter IMPLEMENTATION.
     IF  l_line <= 1.
       CLEAR l_hidden.
     ELSE.
-      LOOP AT wt_sort_values INTO ls_sort_values WHERE is_collapsed = abap_false.
+      LOOP AT wt_sort_values INTO ls_sort_values USING KEY collapsed WHERE is_collapsed = abap_false.
         IF l_hidden < ls_sort_values-sort_level.
           l_hidden = ls_sort_values-sort_level.
         ENDIF.
@@ -1424,7 +1425,7 @@ CLASS zcl_excel_converter IMPLEMENTATION.
               <fs_sortval> =  <fs_fldval>.
               <fs_sortv>-new = abap_false.
               l_line = <fs_sortv>-sort_level.
-              LOOP AT wt_sort_values ASSIGNING <fs_sortv> WHERE sort_level >= l_line.
+              LOOP AT wt_sort_values ASSIGNING <fs_sortv> WHERE sort_level >= l_line. "#EC CI_HASHSEQ
                 <fs_sortv>-row_int = l_row_int.
               ENDLOOP.
             ENDIF.
