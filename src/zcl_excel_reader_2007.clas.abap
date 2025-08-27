@@ -344,7 +344,7 @@ CLASS zcl_excel_reader_2007 DEFINITION
     METHODS create_zip_archive
       IMPORTING
         !i_xlsx_binary       TYPE xstring
-        !i_use_alternate_zip TYPE seoclsname OPTIONAL
+        !i_use_alternate_zip TYPE clike OPTIONAL
       RETURNING
         VALUE(e_zip)         TYPE REF TO lcl_zip_archive
       RAISING
@@ -2596,7 +2596,8 @@ CLASS zcl_excel_reader_2007 IMPLEMENTATION.
       WHILE lo_ixml_cell_elem IS BOUND.
         CLEAR: lv_cell_value,
                lv_cell_formula,
-               lv_style_guid.
+               lv_style_guid,
+               lt_rtf.
 
         fill_struct_from_attributes( EXPORTING ip_element = lo_ixml_cell_elem CHANGING cp_structure = ls_cell ).
 
